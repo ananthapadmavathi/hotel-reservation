@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/*.py", "use": "@vercel/python" },
+    { "src": "*.html", "use": "@vercel/static" },
+    { "src": "*.css", "use": "@vercel/static" },
+    { "src": "*.js", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/rooms/status", "dest": "/api/main.py" },
+    { "src": "/book", "dest": "/api/main.py" },
+    { "src": "/random", "dest": "/api/main.py" },
+    { "src": "/reset", "dest": "/api/main.py" },
+    { "src": "/vacate", "dest": "/api/main.py" },
+    { "src": "/bookings", "dest": "/api/main.py" },
+
+    { "src": "/(.*\\.js)", "dest": "/$1" },
+    { "src": "/(.*\\.css)", "dest": "/$1" },
+    { "src": "/(.*\\.html)", "dest": "/$1" },
+
+    { "src": "/.*", "dest": "/index.html" }
+  ]
+}

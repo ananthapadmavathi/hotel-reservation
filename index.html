@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Hotel Room Reservation System</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <h1>Hotel Room Reservation System</h1>
+
+  <div class="controls">
+    <input 
+      id="roomInput" 
+      type="text" 
+      placeholder="Enter: room (>=100) or bulk (1–5) or range (X–Y)"
+    />
+    <button onclick="bookRoom()">Book</button>
+    <button onclick="randomFill()">Random</button>
+    <button onclick="resetHotel()">Reset</button>
+  </div>
+
+  <div id="hotelGrid"></div>
+
+  <div id="vacateModal" class="modal">
+    <div class="modal-box">
+      <h3 id="modalTitle">Vacate?</h3>
+      <p id="modalRoom"></p>
+      <div class="modal-buttons">
+        <button id="confirmVacateBtn">Vacate</button>
+        <button id="cancelVacateBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
