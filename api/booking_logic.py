@@ -1,10 +1,24 @@
-# api/booking_logic.py
-
+import os
 import random
+from pymongo import MongoClient
 
-# Build room model
-# Floors 1-9 => 101-110, 201-210, ...
-# Floor 10 => 1001-1007 (7 rooms)
+# ==============================
+# MongoDB Connection
+# ==============================
+
+MONGO_URI = os.environ.get("MONGO_URI")
+
+if not MONGO_URI:
+    raise Exception("MONGO_URI environment variable not set")
+
+client = MongoClient(MONGO_URI)
+db = client["hotelDB"]
+collection = db["bookings"]
+
+# ==============================
+# Room Model
+# ==============================
+
 ALL_ROOMS = {
     floor: (
         [1000 + i for i in range(1, 8)] if floor == 10
@@ -13,82 +27,87 @@ ALL_ROOMS = {
     for floor in range(1, 11)
 }
 
-state = {
-    "next_booking_id": 1,
-    "bookings": []
-}
-
 MAX_BULK = 5
 
 
-def floor_of(room: int) -> int:
-    if room >= 1000:
-        return 10
-    return room // 100
+# ==============================
+# Helper Functions
+# ==============================
+
+def get_next_booking_id():
+    last = collection.find_one(sort=[("id", -1)])
+    return 1 if not last else last["id"] + 1
+
+
+def get_all_bookings():
+    bookings = []
+    for b in collection.find({}, {"_id": 0}):
+        bookings.append(b)
+    return bookings
 
 
 def get_occupied():
     occ = []
-    for b in state["bookings"]:
+    for b in collection.find():
         occ += b["rooms"]
     return set(occ)
 
 
-def available_on_floor(f):
+def available_on_floor(floor):
     occ = get_occupied()
-    return [r for r in ALL_ROOMS[f] if r not in occ]
-
-
-def is_occupied(room: int) -> bool:
-    return room in get_occupied()
+    return [r for r in ALL_ROOMS[floor] if r not in occ]
 
 
 def room_exists(room: int) -> bool:
     return any(room in rooms for rooms in ALL_ROOMS.values())
 
 
+def is_occupied(room: int) -> bool:
+    return room in get_occupied()
+
+
+# ==============================
+# Booking Logic
+# ==============================
+
 def commit_single(room: int):
-    bid = state["next_booking_id"]
-    state["next_booking_id"] += 1
-    state["bookings"].append({"id": bid, "rooms": [room]})
+    bid = get_next_booking_id()
+    collection.insert_one({
+        "id": bid,
+        "rooms": [room]
+    })
     return [room], bid
 
 
 def bulk_allocate(count: int):
-    """
-    Bulk logic for <=5 rooms:
-    1. Find floor with max free rooms
-    2. Allocate as many as possible
-    3. Spillover to nearest floors by floor distance
-    4. If insufficient -> fail
-    """
+    if count < 1:
+        return None, "Invalid count"
+
     if count > MAX_BULK:
         return None, f"Bulk booking limit exceeded (max {MAX_BULK})"
 
-    occ = get_occupied()
     free_by_floor = {f: available_on_floor(f) for f in range(1, 11)}
-
-    # STEP 1: Find best floor by free count (desc)
     best_floor = max(free_by_floor, key=lambda f: len(free_by_floor[f]))
 
     result = []
     need = count
 
-    # STEP 2: Allocate from best floor first
+    # Step 1: Allocate from best floor
     take = min(need, len(free_by_floor[best_floor]))
     result += free_by_floor[best_floor][:take]
     need -= take
 
-    # STEP 3: Spillover across nearest floors
+    # Step 2: Spillover to nearest floors
     if need > 0:
-        # floors sorted by travel distance from best_floor
         other_floors = sorted(
             [f for f in range(1, 11) if f != best_floor],
             key=lambda f: abs(f - best_floor)
         )
+
         for f in other_floors:
             if need == 0:
                 break
+
             rooms = free_by_floor[f]
             if rooms:
                 take = min(need, len(rooms))
@@ -96,49 +115,50 @@ def bulk_allocate(count: int):
                 need -= take
 
     if need > 0:
-        return None, "Not enough rooms available for bulk booking"
+        return None, "Not enough rooms available"
 
-    # STEP 4: Commit booking
-    bid = state["next_booking_id"]
-    state["next_booking_id"] += 1
-    state["bookings"].append({"id": bid, "rooms": result})
+    bid = get_next_booking_id()
+    collection.insert_one({
+        "id": bid,
+        "rooms": result
+    })
+
     return result, bid
-
-
-def commit_bulk_from_count(value: int):
-    if value < 1:
-        return None, "Invalid count"
-    if value > MAX_BULK:
-        return None, f"Bulk booking limit exceeded (max {MAX_BULK})"
-    return bulk_allocate(value)
 
 
 def commit_booking(value: int):
     """
-    Called from API:
     value >=100 => single room
-    1 <= value <= 5 => bulk rooms
+    1 <= value <= 5 => bulk booking
     """
     if value >= 100:
         if not room_exists(value):
             return None, "Room does not exist"
+
         if is_occupied(value):
             return None, "Room already occupied"
+
         return commit_single(value)
 
-    # bulk
-    return commit_bulk_from_count(value)
+    return bulk_allocate(value)
 
+
+# ==============================
+# Other Operations
+# ==============================
 
 def vacate_booking(bid: int):
-    state["bookings"] = [b for b in state["bookings"] if b["id"] != bid]
+    collection.delete_one({"id": bid})
 
 
 def reset_hotel():
-    state["next_booking_id"] = 1
-    state["bookings"] = []
+    collection.delete_many({})
 
 
 def random_room():
-    free = [r for f in ALL_ROOMS for r in ALL_ROOMS[f] if r not in get_occupied()]
+    free = [
+        r for f in ALL_ROOMS
+        for r in ALL_ROOMS[f]
+        if r not in get_occupied()
+    ]
     return random.choice(free) if free else None
